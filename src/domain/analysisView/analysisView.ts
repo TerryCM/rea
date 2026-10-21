@@ -237,7 +237,11 @@ const itemViewSchema = z.discriminatedUnion("collection", [
 ]);
 const pageViewSchema = z.strictObject({
   kind: z.literal("page"),
-  collection: z.enum(["sections", "symbols", "modules"]),
+  collection: z
+    .enum(["sections", "symbols", "modules", "limitations"])
+    .describe(
+      "sections and symbols page inspect_binary_layout Evidence; modules and limitations page analyze_javascript_application Evidence, whose limitations page holds every deduplicated limitation.",
+    ),
   offset: z.number().int().nonnegative(),
   limit: z.number().int().positive(),
 });
@@ -385,6 +389,8 @@ const javascriptSummarySchema = z.strictObject({
   electron: jsonObjectSchema,
   coverage: jsonObjectSchema,
   limitation_count: z.number().int().nonnegative(),
+  // Views projected before limitation pages existed omit this count.
+  limitations_total: z.number().int().nonnegative().exactOptional(),
 });
 
 const viewResultBase = {

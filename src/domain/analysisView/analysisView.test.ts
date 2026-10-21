@@ -1086,8 +1086,11 @@ it.each([63, 64, 65, 10_000])(
       omitted: number,
       field: "limitations" | "unknowns",
       evidenceId: string,
+      javascript = true,
     ) =>
-      `${String(omitted)} additional ${field} omitted from this view; consult source parent Evidence ${evidenceId} for the complete list (the caller-supplied record, or its retaining session).`;
+      javascript
+        ? `${String(omitted)} additional ${field} omitted from this view; page them all with inspect_analysis_view on parent Evidence ${evidenceId} using view {"kind":"page","collection":"limitations","offset":0,"limit":100}.`
+        : `${String(omitted)} additional ${field} omitted from this view; consult source parent Evidence ${evidenceId} for the complete list (the caller-supplied record, or its retaining session).`;
     for (const view of [
       { kind: "summary" },
       { kind: "page", collection: "modules", offset: 0, limit: 1 },
@@ -1143,6 +1146,7 @@ it.each([63, 64, 65, 10_000])(
             count - result.value.limitations.length + 1,
             "limitations",
             layout.evidenceId,
+            false,
           ),
         );
       }
@@ -1233,7 +1237,7 @@ it.each(["partial", "unknown"] as const)(
         ...messages.slice(0, 65),
         `graph.coverage.status is ${status}`,
         "semantic_graph.coverage.status is unknown",
-        `1 additional unknowns omitted from this view; consult source parent Evidence ${parent.evidenceId} for the complete list (the caller-supplied record, or its retaining session).`,
+        `1 additional unknowns omitted from this view; page them all with inspect_analysis_view on parent Evidence ${parent.evidenceId} using view {"kind":"page","collection":"limitations","offset":0,"limit":100}.`,
       ]);
     }
   },
@@ -1294,16 +1298,27 @@ it("rejects unsupported parent operations and incompatible collections", () => {
     ok: false,
     error: { _tag: "AnalysisUnsupportedTargetError" },
   });
-  const modulesOnLayout = projectAnalysisView(layoutParent(), {
-    kind: "page",
-    collection: "modules",
-    offset: 0,
-    limit: 1,
-  });
-  expect(modulesOnLayout).toMatchObject({
-    ok: false,
-    error: { _tag: "AnalysisInputError" },
-  });
+  for (const collection of ["modules", "limitations"] as const)
+    expect(
+      projectAnalysisView(layoutParent(), {
+        kind: "page",
+        collection,
+        offset: 0,
+        limit: 1,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: {
+        _tag: "AnalysisInputError",
+        issues: [
+          {
+            message: expect.stringContaining(
+              `${collection} collection applies to analyze_javascript_application Evidence.`,
+            ),
+          },
+        ],
+      },
+    });
   const sectionsOnJs = projectAnalysisView(javascriptParent(), {
     kind: "item",
     collection: "sections",
@@ -1313,6 +1328,62 @@ it("rejects unsupported parent operations and incompatible collections", () => {
     ok: false,
     error: { _tag: "AnalysisInputError" },
   });
+});
+
+it("bounds a JavaScript summary with 30,593 limitations and pages every one", () => {
+  // The size of a 582 MB Electron ASAR's limitation set, each a realistic
+  // per-file parser diagnostic.
+  const messages = Array.from(
+    { length: 30_593 },
+    (_, index) =>
+      `app.asar/node_modules/package-${String(index).padStart(5, "0")}/dist/index.js: JavaScript source was not analyzed because parsing failed: Unexpected token (1:${String(index)}); its modules, exports and semantic relations remain unknown.`,
+  );
+  const analysis = analysisViewJavaScriptAnalysis();
+  const parent = javascriptParent({ ...analysis, limitations: messages });
+  const all = [
+    ...new Set([
+      ...parent.limitations,
+      ...messages,
+      ...analysis.graph.limitations,
+      ...analysis.semantic_graph.limitations,
+    ]),
+  ].sort();
+  expect(Buffer.byteLength(JSON.stringify(messages))).toBeGreaterThan(
+    5 * 1024 * 1024,
+  );
+
+  const summary = projectAnalysisView(parent, { kind: "summary" });
+  if (!summary.ok) throw summary.error;
+  if (summary.value.kind !== "summary") throw new Error("expected summary");
+  expect(summary.value.summary).toMatchObject({
+    limitation_count: messages.length,
+    limitations_total: all.length,
+  });
+  expect(Buffer.byteLength(JSON.stringify(summary.value))).toBeLessThan(
+    64 * 1024,
+  );
+  const notice = summary.value.limitations.at(-1);
+  expect(notice).toContain(
+    'view {"kind":"page","collection":"limitations","offset":0,"limit":100}',
+  );
+  expect(notice).toContain(parent.evidenceId);
+
+  const paged: unknown[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const page = projectAnalysisView(parent, {
+      kind: "page",
+      collection: "limitations",
+      offset,
+      limit: 5_000,
+    });
+    if (!page.ok) throw page.error;
+    if (page.value.kind !== "page") throw new Error("expected page");
+    expect(page.value.coverage.total).toBe(all.length);
+    paged.push(...page.value.items);
+    offset = page.value.coverage.next_offset;
+  }
+  expect(paged).toEqual(all);
 });
 
 it("keeps the complete unique set when it fits the byte budget", () => {

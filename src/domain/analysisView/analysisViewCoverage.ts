@@ -37,17 +37,22 @@ export const ANALYSIS_VIEW_MESSAGE_BYTE_LIMIT = 256 * 1024;
 // This upper bound rejects giant messages without allocating their JSON copies.
 const messageWireBytes = (value: string): number => (value.length * 18 + 6) * 3;
 
-/** Deduplicate and bound messages by count and repeated serialized bytes. */
+/**
+ * Deduplicate and bound messages by count and repeated serialized bytes.
+ * `remainder` tells callers where the omitted messages are; by default the
+ * complete source parent Evidence.
+ */
 export const boundedViewMessages = (
   values: readonly string[],
   parentEvidenceId: string,
   field: "limitations" | "unknowns",
   required: readonly string[] = [],
+  remainder = `consult source parent Evidence ${parentEvidenceId} for the complete list (the caller-supplied record, or its retaining session)`,
 ): string[] => {
   const priority = uniqueSorted(required);
   const unique = uniqueSorted([...priority, ...values]);
   const notice = (omitted: number): string =>
-    `${String(omitted)} additional ${field} omitted from this view; consult source parent Evidence ${parentEvidenceId} for the complete list (the caller-supplied record, or its retaining session).`;
+    `${String(omitted)} additional ${field} omitted from this view; ${remainder}.`;
   const totalBytes = unique.reduce(
     (total, value) => total + messageWireBytes(value),
     0,
