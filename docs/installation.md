@@ -78,8 +78,8 @@ replacement or edit and name the recovery backup. Quit clients before editing th
 these checks do not lock out another writer modifying the same file in place,
 or exclude pathname changes between the final check and publication.
 Setup also retains valid environment overrides in REA's existing server entry,
-such as `REA_MCP_INPUT_SCHEMA_PROFILE`, `REA_MCP_OUTPUT_SCHEMA_PROFILE`, and
-`REA_MCP_MAX_RESPONSE_BYTES`.
+such as `REA_MCP_INPUT_SCHEMA_PROFILE`, `REA_MCP_OUTPUT_SCHEMA_PROFILE`,
+`REA_MCP_MAX_RESPONSE_BYTES`, and `REA_MCP_PERSISTED_RESULT_MAX_BYTES`.
 Detected provider settings replace only matching environment keys.
 Setup and doctor report a malformed REA environment map or invalid runtime
 setting before setup writes files. Repair the named setting in the client

@@ -10,6 +10,7 @@ import {
   schemaLiteralValues,
 } from "./jsonSchemaKeywords.js";
 import { digestCanonicalValue } from "../domain/canonicalDigest.js";
+import { persistedToolResultSchema } from "./persistedToolResult.js";
 
 const PROPERTY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   addresses: "Ordered provider-normalized procedure addresses to analyze.",
@@ -90,7 +91,7 @@ export const advertisedInputJsonSchema = <Contract extends ToolContract>(
   }) as Record<string, unknown>;
 
 /** Share output definitions and content-bound validator identities on the wire. */
-export const toolOutputSchemaWithMetadata = <Contract extends ToolContract>(
+const contractOutputSchemaWithMetadata = <Contract extends ToolContract>(
   contract: Contract,
 ): Contract["outputSchema"] =>
   withAdvertisedJsonSchema(
@@ -106,13 +107,93 @@ export const toolOutputSchemaWithMetadata = <Contract extends ToolContract>(
       if ("$id" in shared || hasRelativeSchemaReference(shared)) return shared;
       return {
         ...shared,
-        $id: `urn:rea:tool-output:sha256:${digestCanonicalValue(
-          { target: options.target, schema: shared },
-          "Tool output schema",
-        )}`,
+        $id: outputSchemaIdentity(options.target, shared),
       };
     },
   );
+
+const outputSchemaIdentity = (
+  target: string,
+  schema: Record<string, unknown>,
+): string =>
+  `urn:rea:tool-output:sha256:${digestCanonicalValue(
+    { target, schema },
+    "Tool output schema",
+  )}`;
+
+/**
+ * The advertised output schema: the contract's own projection, unchanged and
+ * embedded as an identified resource so its references still resolve against
+ * it, or the persisted-result alternative MCP delivery uses when a completed
+ * result exceeds the response budget. Clients validate structured content
+ * against this schema, so both alternatives are accepted. A projection
+ * without its own ID cannot be embedded without changing how its references
+ * resolve; it is advertised unchanged, and delivery keeps the error instead.
+ */
+export const toolOutputSchemaWithMetadata = <Contract extends ToolContract>(
+  contract: Contract,
+): Contract["outputSchema"] => {
+  const contractOutput = contractOutputSchemaWithMetadata(contract);
+  const projectContract = contractOutput["~standard"].jsonSchema.output;
+  return withAdvertisedJsonSchema(
+    z.union([
+      contractOutput,
+      persistedToolResultSchema,
+    ]) as unknown as Contract["outputSchema"],
+    "output",
+    () => (options) => {
+      const projected = projectContract(options);
+      if (typeof projected.$id !== "string") return projected;
+      const { $schema, ...embedded } = projected;
+      const persisted = persistedResultJsonSchema(options.target);
+      return {
+        ...($schema === undefined ? {} : { $schema }),
+        // Both alternatives are objects; clients and the SDK codec read the root type.
+        type: "object",
+        anyOf: [embedded, persisted],
+        // The embedded ID already binds the contract, so identify the root by
+        // it rather than digesting the complete projection again.
+        $id: outputSchemaIdentity(options.target, {
+          contract: projected.$id,
+          persisted,
+        }),
+      };
+    },
+  );
+};
+
+/**
+ * Whether a tool's advertised output accepts the persisted-result alternative
+ * in every target, so delivery never returns a result its clients reject.
+ */
+export const advertisesPersistedToolResult = (
+  contract: ToolContract,
+): boolean => {
+  const cached = persistedAdvertisement.get(contract);
+  if (cached !== undefined) return cached;
+  const project =
+    toolOutputSchemaWithMetadata(contract)["~standard"].jsonSchema.output;
+  const advertised = (["draft-2020-12", "draft-07"] as const).every((target) =>
+    Array.isArray(project({ target }).anyOf),
+  );
+  persistedAdvertisement.set(contract, advertised);
+  return advertised;
+};
+
+const persistedAdvertisement = new WeakMap<ToolContract, boolean>();
+
+const persistedResultProjections = new Map<string, Record<string, unknown>>();
+
+/** The persisted-result branch, without its own dialect declaration. */
+const persistedResultJsonSchema = (target: string): Record<string, unknown> => {
+  const cached = persistedResultProjections.get(target);
+  if (cached !== undefined) return cached;
+  const { $schema: _dialect, ...branch } = persistedToolResultSchema[
+    "~standard"
+  ].jsonSchema.output({ target: target as "draft-2020-12" });
+  persistedResultProjections.set(target, branch);
+  return branch;
+};
 
 /**
  * Apply a wire-presentation transform to one schema's advertised input

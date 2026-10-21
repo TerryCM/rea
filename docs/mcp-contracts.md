@@ -240,6 +240,46 @@ delivery for responses that fit that buffer and Node's single-string limit.
 It does not change the client's buffer, analysis coverage, or retained content.
 Ordinary responses keep their existing complete result contract.
 
+### Persisted oversized results
+
+When a tool completes but its complete response would exceed the response
+budget or Node's single-string limit, MCP delivery saves the result to a file
+and returns a small successful result instead of a `resource_constraint`
+error, much as a host saves an oversized tool output and shows a preview:
+
+```json
+{
+  "persisted_result": {
+    "message": "Output too large: the complete response would be at least 21000000 bytes, beyond the 10484736-byte MCP response budget. Full output (10500000 bytes of JSON) saved to: /tmp/rea-mcp-results-Ab12Cd/analyze_javascript_application-20261021T120000000Z-1a2b3c4d.json. …",
+    "path": "/tmp/rea-mcp-results-Ab12Cd/analyze_javascript_application-20261021T120000000Z-1a2b3c4d.json",
+    "bytes": 10500000,
+    "sha256": "…",
+    "preview": "{\"evidence_id\":\"ev_…",
+    "preview_truncated": true,
+    "evidence_id": "ev_…"
+  }
+}
+```
+
+The file holds exactly the JSON text the inline response would have carried
+(`bytes` and `sha256` describe it); `preview` is its first 2048 UTF-8 bytes at
+most. `evidence_id` appears only when the session acknowledged retaining the
+Evidence, which then remains available to `inspect_analysis_view` and
+`export_evidence_bundle`; `continuation` appears when a ready-to-call
+`inspect_analysis_view` page exists. Every advertised output schema accepts
+this `persisted_result` alternative, so clients that validate structured
+content accept it. Results that fit are delivered inline exactly as before.
+
+Each MCP session owns one private directory, created on first use under the
+system temporary directory (`TMPDIR`) as `rea-mcp-results-*` with owner-only
+access. Files are written atomically by the Evidence bundle writer with mode
+0600 and removed with the directory when the session ends. The total bytes a
+session writes are bounded by `REA_MCP_PERSISTED_RESULT_MAX_BYTES`, default
+4294967296 (4 GiB); `0` disables persistence. When the directory cannot be
+created, the bound is reached or the write fails, the tool returns the
+`resource_constraint` error with `details.reported_limits.persistence_error`
+describing why the result was not saved.
+
 ### Error recovery and deadline ownership
 
 Initialization instructions and the static JavaScript tool description teach

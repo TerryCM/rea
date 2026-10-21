@@ -15,6 +15,7 @@ import {
 } from "../../../src/domain/managed/managedNativeVerificationSchemas.js";
 import { nativeUiResultSchema } from "../../../src/domain/native/nativeUiObservation.js";
 import { toolRegistrationOptions } from "../../../src/server/toolRegistrationOptions.js";
+import { advertisedContractOutput } from "../../fixtures/advertisedOutputSchema.js";
 
 import { verifyManagedNativeBoundaries } from "../../../src/domain/managed/managedNativeVerification.js";
 import { processCaptureSchema } from "../../../src/domain/process/processCapture.js";
@@ -73,12 +74,13 @@ it("advertises semantic output invariants and keeps producers aligned with Zod",
       const tool = advertised.get(name);
       if (tool?.outputSchema === undefined)
         throw new Error(`${name} output schema missing`);
-      const outputSchema = record(tool.outputSchema);
+      const advertisedOutput = record(tool.outputSchema);
+      const outputSchema = advertisedContractOutput(advertisedOutput);
       const result = record(record(outputSchema.properties).normalized_result);
       const standaloneResultSchema = z.record(z.string(), z.unknown()).parse({
         ...result,
-        ...(typeof outputSchema.$schema === "string"
-          ? { $schema: outputSchema.$schema }
+        ...(typeof advertisedOutput.$schema === "string"
+          ? { $schema: advertisedOutput.$schema }
           : {}),
         ...(outputSchema.$defs === undefined
           ? {}

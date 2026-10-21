@@ -12,6 +12,7 @@ import { createServer } from "../../../src/server/createServer.js";
 import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { createTestBinarySession } from "../../fixtures/binarySession.js";
 import { connectGhidraMcp } from "./ghidraMcpHarness.js";
+import { persistedResultsDisabled } from "../../fixtures/persistedToolResults.js";
 
 const procedureRows = [
   {
@@ -189,8 +190,10 @@ it("recovers an oversized complete inventory through a working retained page wit
       byte_length: 7001,
     },
   }));
-  const harness = await connectGhidraMcp("native-inventory-capacity", () =>
-    Promise.resolve(ok(items)),
+  const harness = await connectGhidraMcp(
+    "native-inventory-capacity",
+    () => Promise.resolve(ok(items)),
+    { environment: persistedResultsDisabled() },
   );
   onTestFinished(() => harness.close());
   const complete = await harness.mcp.callTool({

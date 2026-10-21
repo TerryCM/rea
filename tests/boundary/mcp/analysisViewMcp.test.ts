@@ -50,6 +50,8 @@ import { BINARY_LAYOUT_TEST_PROVIDER } from "../../fixtures/binaryDiagnostics/la
 import { wasmArtifactFixture } from "../../fixtures/wasm/artifact.js";
 import { evmInterfaceFixture } from "../../fixtures/evm/interface.js";
 import type { RelationshipCoverage } from "../../../src/domain/relationshipCoverage.js";
+import { persistedResultsDisabled } from "../../fixtures/persistedToolResults.js";
+import { persistedToolResultSchema } from "../../../src/contracts/persistedToolResult.js";
 
 const connect = async (
   binaryLayout?: BinaryLayoutService,
@@ -61,6 +63,8 @@ const connect = async (
   const server = createServer(
     { kind: "session", session },
     {
+      // Oversized views here exercise the response-budget error's recovery.
+      environment: persistedResultsDisabled(),
       ...(binaryLayout === undefined ? {} : { binaryLayout }),
       ...(webNetworkCapture === undefined ? {} : { webNetworkCapture }),
     },
@@ -898,6 +902,7 @@ it("reads successive native source pages directly from a completed-result transp
         limitations: [],
       });
     },
+    { environment: persistedResultsDisabled() },
   );
   onTestFinished(() => harness.close());
   const { mcp: client, session, calls } = harness;
@@ -967,6 +972,56 @@ it("reads successive native source pages directly from a completed-result transp
     session.evidenceById(parent.evidence_id)?.normalized_result,
   ).toMatchObject({ pseudocode });
   await client.ping();
+  expect(calls).toEqual(["analyze_function"]);
+});
+
+it("persists an oversized native dossier with its retained-page continuation", async () => {
+  const pseudocode = "int fixture_add(int a, int b) { return a + b; }\n".repeat(
+    150_000,
+  );
+  const harness = await connectGhidraMcp("native-persisted", async () =>
+    ok({
+      value: {
+        ...functionDossierSchema.parse(ghidraFunctionDossier()),
+        pseudocode,
+      },
+      limitations: [],
+    }),
+  );
+  onTestFinished(() => harness.close());
+  const { mcp: client, session, calls } = harness;
+  const response = await client.callTool({
+    name: "analyze_function",
+    arguments: { procedure: "0x401000" },
+  });
+  expect(response.isError).not.toBe(true);
+  const persisted = persistedToolResultSchema.parse(
+    response.structuredContent,
+  ).persisted_result;
+  const parent = parseEvidence(
+    session.evidenceById(persisted.evidence_id ?? ""),
+  );
+  expect(parent.normalized_result).toMatchObject({ pseudocode });
+  const saved = await readFile(persisted.path);
+  expect(saved.byteLength).toBe(persisted.bytes);
+  expect(JSON.parse(saved.toString("utf8"))).toEqual(parent);
+  const call = z
+    .object({
+      name: z.literal("inspect_analysis_view"),
+      arguments: toolContract("inspect_analysis_view").inputSchema,
+    })
+    .parse(persisted.continuation);
+  expect(call.arguments.source).toEqual({
+    kind: "retained-evidence",
+    evidence_id: parent.evidence_id,
+  });
+  const first = await client.callTool(call);
+  expect(first.isError).not.toBe(true);
+  expect(
+    toolContract("inspect_analysis_view").outputSchema.parse(
+      first.structuredContent,
+    ).normalized_result,
+  ).toMatchObject({ item: { text: pseudocode.slice(0, 64) } });
   expect(calls).toEqual(["analyze_function"]);
 });
 
