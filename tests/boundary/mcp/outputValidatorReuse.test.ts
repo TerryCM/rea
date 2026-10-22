@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { toolContract } from "../../../src/contracts/toolContracts.js";
 import { toolOutputSchemaWithMetadata } from "../../../src/contracts/toolSchemaMetadata.js";
+import { advertisedContractOutput } from "../../fixtures/advertisedOutputSchema.js";
 
 const advertised = <
   Schema extends z.ZodType<Readonly<Record<string, unknown>>>,
@@ -139,8 +140,13 @@ it("advertises stable output identity without interpreting example data as refer
     )?.outputSchema;
     expect(output?.$id).toMatch(/^urn:rea:tool-output:sha256:[a-f0-9]{64}$/u);
     expect(second.tools[0]?.outputSchema).toEqual(output);
-    expect(output?.examples).toEqual([value]);
-    expect(output?.default).toEqual(value);
+    if (output === undefined) throw new Error("Missing output schema");
+    const contractOutput = advertisedContractOutput(output);
+    expect(contractOutput.$id).toMatch(
+      /^urn:rea:tool-output:sha256:[a-f0-9]{64}$/u,
+    );
+    expect(contractOutput.examples).toEqual([value]);
+    expect(contractOutput.default).toEqual(value);
     expect(
       (await client.callTool({ name: "literal_output" })).structuredContent,
     ).toEqual(value);

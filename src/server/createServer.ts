@@ -52,6 +52,8 @@ import {
   type ToolResultDelivery,
 } from "./toolResult.js";
 import { parseMcpResponseBudget } from "../config/mcpResponseBudget.js";
+import { parseMcpPersistedResultBudget } from "../config/mcpPersistedResultBudget.js";
+import { PersistedToolResultStore } from "./PersistedToolResultStore.js";
 import { parseMcpOutputSchemaProfile } from "../config/mcpOutputSchemaProfile.js";
 import {
   compactPresentationForMcpInputSchemaProfile,
@@ -276,6 +278,7 @@ const createMcpServer = (
   delivery: ToolResultDelivery,
   compactPresentation: CompactInputSchemaPresentation | undefined,
   omitOutputSchemas: boolean,
+  persistedResults: PersistedToolResultStore | undefined,
 ): EvidenceMcpServer =>
   new EvidenceMcpServer(
     {
@@ -296,6 +299,7 @@ const createMcpServer = (
     delivery,
     compactPresentation,
     omitOutputSchemas,
+    persistedResults,
   );
 
 /**
@@ -341,6 +345,10 @@ export const createServer = (
   const javascriptRecovery =
     options.javascriptRecovery ?? createJavaScriptRecoveryProvider(environment);
   const artifactResources = new ArtifactResourceScope();
+  const persistedResults = selectPersistedToolResultStore(
+    environment,
+    artifactResources,
+  );
   const reverseEngineering =
     createReverseEngineeringService(providerEnvironment);
   const firmwareAnalysis = new FirmwareAnalysisService(
@@ -365,6 +373,7 @@ export const createServer = (
     delivery,
     selectCompactInputSchemaPresentation(environment),
     omitOutputSchemas,
+    persistedResults,
   );
   const gdbSessions = new GdbSessionManager({
     environment: providerEnvironment,
@@ -436,6 +445,7 @@ export const createServer = (
           ]),
       webRuntime.provider.close?.() ?? Promise.resolve(),
       artifactResources.close(),
+      persistedResults?.close() ?? Promise.resolve(),
       reverseEngineering.close(),
       firmwareAnalysis.close(),
       gdbSessions.closeAll(),
@@ -672,6 +682,22 @@ const selectToolResultDelivery = (
   );
   if (!configured.ok) throw configured.error;
   return createToolResultDelivery(configured.value);
+};
+
+/** One session-owned store for results that exceed the response budget; zero disables it. */
+const selectPersistedToolResultStore = (
+  environment: Readonly<NodeJS.ProcessEnv>,
+  resources: ArtifactResourceScope,
+): PersistedToolResultStore | undefined => {
+  const configured = parseMcpPersistedResultBudget(
+    environment.REA_MCP_PERSISTED_RESULT_MAX_BYTES,
+  );
+  if (!configured.ok) throw configured.error;
+  return configured.value === 0
+    ? undefined
+    : new PersistedToolResultStore(resources, {
+        maximumBytes: configured.value,
+      });
 };
 
 const outputSchemasOmitted = (

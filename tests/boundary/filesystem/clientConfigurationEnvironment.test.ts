@@ -306,6 +306,7 @@ it.each([
       REA_MCP_INPUT_SCHEMA_PROFILE: "compact",
       REA_MCP_OUTPUT_SCHEMA_PROFILE: "off",
       REA_MCP_MAX_RESPONSE_BYTES: "33554432",
+      REA_MCP_PERSISTED_RESULT_MAX_BYTES: "0",
       REA_BROWSER_EXECUTABLE: join(root, "custom-browser"),
       GHIDRA_INSTALL_DIR: join(root, "old-ghidra"),
       HOPPER_LOADER_ARGS_JSON: '["", "--loader", "Mach-O"]',
@@ -435,6 +436,11 @@ it.each([
     "invalid response budget",
     { REA_MCP_MAX_RESPONSE_BYTES: "1" },
     "REA_MCP_MAX_RESPONSE_BYTES",
+  ],
+  [
+    "invalid persisted-result budget",
+    { REA_MCP_PERSISTED_RESULT_MAX_BYTES: "-1" },
+    "REA_MCP_PERSISTED_RESULT_MAX_BYTES",
   ],
   [
     "malformed loader JSON",

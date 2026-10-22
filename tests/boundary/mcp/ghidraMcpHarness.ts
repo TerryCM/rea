@@ -34,6 +34,7 @@ export const connectGhidraMcp = async (
     readonly pdb?: GhidraSessionInfo["pdb"];
     readonly sessionTarget?: GhidraSessionInfo["target"];
     readonly attestDosTargetSnapshot?: ReturnType<GhidraProviderClientFactory>["attestDosTargetSnapshot"];
+    readonly environment?: NodeJS.ProcessEnv;
   } = {},
 ) => {
   const calls: GhidraOperation[] = [];
@@ -72,7 +73,12 @@ export const connectGhidraMcp = async (
   );
   const server = createServer(
     { kind: "session", session },
-    { logger: silentLogger },
+    {
+      logger: silentLogger,
+      ...(fixture.environment === undefined
+        ? {}
+        : { environment: fixture.environment }),
+    },
   );
   const mcp = new Client({ name, version: "1.0.0" });
   const [clientTransport, serverTransport] =

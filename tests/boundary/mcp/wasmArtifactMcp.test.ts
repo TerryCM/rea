@@ -23,6 +23,7 @@ import {
   wasmArtifactFixture,
   wasmArtifactExecution,
 } from "../../fixtures/wasm/artifact.js";
+import { persistedResultsDisabled } from "../../fixtures/persistedToolResults.js";
 
 const assertFirstSummaryDelivery = async (
   harness: Awaited<ReturnType<typeof createApplicationMcpHarness>>,
@@ -418,7 +419,10 @@ it("reads an oversized completed WASM result through its reported retained refer
     inspect,
   });
   const harness = await createApplicationMcpHarness({
-    serverOptions: { wasmArtifact: service },
+    serverOptions: {
+      wasmArtifact: service,
+      environment: persistedResultsDisabled(),
+    },
   });
   onTestFinished(harness.close);
   const { summary, retained } = await assertFirstSummaryDelivery(

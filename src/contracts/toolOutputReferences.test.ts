@@ -8,6 +8,7 @@ import { toolContract } from "./toolContracts.js";
 import { toolOutputSchemaWithMetadata } from "./toolSchemaMetadata.js";
 import { RAW_ONLY_ARCHITECTURES } from "../domain/binaryTargetTypes.js";
 import { createEvidence } from "../domain/evidence.js";
+import { advertisedContractOutput } from "../../tests/fixtures/advertisedOutputSchema.js";
 
 it.each(
   (["draft-2020-12", "draft-07"] as const).flatMap((target) =>
@@ -93,7 +94,9 @@ it("preserves explicit schema identity and relative reference resolution", () =>
     ...contract,
     outputSchema: canonical.meta({ $id: "https://example.test/result" }),
   })["~standard"].jsonSchema.output({ target: "draft-2020-12" });
-  expect(identified.$id).toBe("https://example.test/result");
+  expect(advertisedContractOutput(identified).$id).toBe(
+    "https://example.test/result",
+  );
   const explicit = ajv.compile(identified);
   expect(explicit({ value: "abc" })).toBe(true);
   expect(explicit({ value: 1 })).toBe(false);
@@ -208,7 +211,9 @@ it.each(
     expect(advertised.$id).toMatch(
       /^urn:rea:tool-output:sha256:[a-f0-9]{64}$/u,
     );
-    expect(Reflect.get(advertised, keyword)).toEqual(annotation);
+    const embedded = advertisedContractOutput(advertised);
+    expect(embedded.$id).toMatch(/^urn:rea:tool-output:sha256:[a-f0-9]{64}$/u);
+    expect(Reflect.get(embedded, keyword)).toEqual(annotation);
     const validate = new AjvJsonSchemaValidator().getValidator(
       JSON.parse(JSON.stringify(advertised)),
     );

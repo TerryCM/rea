@@ -10,6 +10,7 @@ import {
   toolInputSchemaWithMetadata,
   toolOutputSchemaWithMetadata,
 } from "./toolSchemaMetadata.js";
+import { advertisedContractOutput } from "../../tests/fixtures/advertisedOutputSchema.js";
 
 it.each(["draft-2020-12", "draft-07"] as const)(
   "retains native base64 metadata and intersections in both MCP directions: %s",
@@ -30,11 +31,19 @@ it.each(["draft-2020-12", "draft-07"] as const)(
     const output = toolOutputSchemaWithMetadata(contract);
     const projectedInput = input["~standard"].jsonSchema.input({ target });
     const projectedOutput = output["~standard"].jsonSchema.output({ target });
-    const { $id, ...withoutId } = projectedOutput;
+    // The embedded contract carries the content-bound identity of its projection.
+    const contractOutput: Record<string, unknown> = {
+      $schema: projectedOutput.$schema,
+      ...advertisedContractOutput(projectedOutput),
+    };
+    const { $id, ...withoutId } = contractOutput;
     expect($id).toBe(
       `urn:rea:tool-output:sha256:${digestCanonicalValue({ target, schema: withoutId }, "Tool output schema")}`,
     );
-    for (const projected of [projectedInput, projectedOutput]) {
+    for (const projected of [
+      projectedInput,
+      advertisedContractOutput(projectedOutput),
+    ]) {
       const properties = projected.properties as Record<string, unknown>;
       const literalProperty = properties.literal as Record<string, unknown>;
       const literalSchema =

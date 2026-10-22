@@ -7,6 +7,7 @@ import { jsonObjectSchema, type JsonValue } from "../jsonValue.js";
 import type { JavaScriptApplicationAnalysisResult } from "../javascript/javascriptApplicationAnalysis.js";
 import type { ApplicationNode } from "../javascript/javascriptApplicationGraphSchemas.js";
 import { err, ok, type Result } from "../result.js";
+import { uniqueSorted } from "../canonicalOrdering.js";
 import type { JavaScriptModuleReference } from "./javascriptModuleReferences.js";
 import {
   javascriptApplicationSourceCoverage,
@@ -217,6 +218,18 @@ const javascriptCoverageUnknowns = (
   return unknowns;
 };
 
+/** Every deduplicated limitation, in the stable order the limitations page uses. */
+const allLimitations = (
+  parent: AnalysisViewParent,
+  analysis: JavaScriptApplicationAnalysisResult,
+): readonly string[] =>
+  uniqueSorted([
+    ...parent.limitations,
+    ...analysis.limitations,
+    ...analysis.graph.limitations,
+    ...analysis.semantic_graph.limitations,
+  ]);
+
 const parentFields = (
   parent: AnalysisViewParent,
   analysis: JavaScriptApplicationAnalysisResult,
@@ -227,6 +240,8 @@ const parentFields = (
     ...analysis.graph.limitations,
     ...analysis.semantic_graph.limitations,
   ];
+  // Omitted unknowns are limitations; coverage unknowns are always retained.
+  const remainder = `page them all with inspect_analysis_view on parent Evidence ${parent.evidenceId} using view {"kind":"page","collection":"limitations","offset":0,"limit":100}`;
   return {
     parent_evidence_id: parent.evidenceId,
     parent_operation: "analyze_javascript_application" as const,
@@ -239,12 +254,15 @@ const parentFields = (
       [...parent.limitations, ...limitations],
       parent.evidenceId,
       "limitations",
+      [],
+      remainder,
     ),
     unknowns: boundedViewMessages(
       limitations,
       parent.evidenceId,
       "unknowns",
       javascriptCoverageUnknowns(sourceCoverage),
+      remainder,
     ),
   };
 };
@@ -385,6 +403,7 @@ export const projectJavaScriptApplicationView = (
           semantic_unknowns: sourceCoverage.semantic_unknown_count,
         }),
         limitation_count: analysis.limitations.length,
+        limitations_total: allLimitations(parent, analysis).length,
       },
       coverage: completeCoverage(moduleCount, moduleCount),
       ...shared,
@@ -405,6 +424,17 @@ export const projectJavaScriptApplicationView = (
       view,
       item: moduleItem(selected.value),
       coverage: completeCoverage(1, modules.length),
+      ...shared,
+    });
+  }
+  if (view.kind === "page" && view.collection === "limitations") {
+    const rows = allLimitations(parent, analysis);
+    const items = rows.slice(view.offset, view.offset + view.limit);
+    return ok({
+      kind: "page",
+      view,
+      items: [...items],
+      coverage: pageCoverage(view.offset, items.length, rows.length),
       ...shared,
     });
   }

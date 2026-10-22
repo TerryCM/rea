@@ -14,6 +14,7 @@ import {
   type RegisteredTool,
   type RequestId,
   type ScopeChallengeHandler,
+  type ServerContext,
   type StandardSchemaWithJSON,
   type ToolAnnotations,
   type ToolCallback,
@@ -37,6 +38,7 @@ import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import { createEvidence } from "../domain/evidence.js";
 import { jsonObjectSchema } from "../domain/jsonValue.js";
 import type { ToolResultDelivery } from "./toolResult.js";
+import type { PersistedToolResultStore } from "./PersistedToolResultStore.js";
 import { toolReturnsTargetContent } from "../contracts/toolEffects.js";
 import {
   carriesTargetContentMarker,
@@ -157,6 +159,9 @@ export class EvidenceMcpServer extends RequestTrackingMcpServer {
     readonly delivery: ToolResultDelivery,
     compactPresentation: CompactInputSchemaPresentation | undefined = undefined,
     private readonly omitOutputSchemas = false,
+    private readonly persistedResults:
+      | PersistedToolResultStore
+      | undefined = undefined,
   ) {
     super(info, options);
     this.compactPresentation =
@@ -214,8 +219,44 @@ export class EvidenceMcpServer extends RequestTrackingMcpServer {
     return super.registerTool(
       name,
       registeredConfig as never,
-      callback as never,
+      this.persistingOversizedResults(config.inputSchema, callback) as never,
     );
+  }
+
+  /**
+   * Save a completed result that exceeds the response budget before SDK
+   * output validation, so the persisted-result alternative is validated
+   * against the same advertised output schema clients use.
+   */
+  private persistingOversizedResults<
+    InputArgs extends StandardSchemaWithJSON | undefined,
+  >(
+    inputSchema: InputArgs,
+    callback: ToolCallback<InputArgs>,
+  ): ToolCallback<InputArgs> {
+    const store = this.persistedResults;
+    if (store === undefined) return callback;
+    const persist = <Result extends object>(
+      result: Result,
+      context: ServerContext,
+    ) => this.delivery.persistOversized(result, store, context.mcpReq.signal);
+    // The SDK calls a schema-less callback with context alone.
+    return (
+      inputSchema === undefined
+        ? async (context: ServerContext) =>
+            persist(
+              await (callback as ToolCallback<undefined>)(context),
+              context,
+            )
+        : async (args: unknown, context: ServerContext) =>
+            persist(
+              await (callback as ToolCallback<StandardSchemaWithJSON>)(
+                args,
+                context,
+              ),
+              context,
+            )
+    ) as ToolCallback<InputArgs>;
   }
 
   /** Preserve the SDK transport lifecycle while retaining oversized errors. */

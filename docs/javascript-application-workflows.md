@@ -80,6 +80,35 @@ incompletely analyzed application. CLI `inspect-analysis-view` reads the same
 request from a JSON file; portable input uses `source.kind: "inline"` with the
 complete parent Evidence.
 
+## Retained limitations
+
+Every view of application Evidence, including the `detail: "summary"` result,
+carries a byte-bounded subset of limitations and unknowns. When entries are
+omitted, the final message says how many and names the page that holds them.
+`summary.limitations_total` counts every deduplicated limitation from the
+parent Evidence, the analysis, and its application and semantic graphs;
+`summary.limitation_count` keeps counting the analysis's own list. Page the
+complete set in stable sorted order:
+
+```json
+{
+  "source": {
+    "kind": "retained-evidence",
+    "evidence_id": "ev_ACTUAL_PARENT_ID"
+  },
+  "view": {
+    "kind": "page",
+    "collection": "limitations",
+    "offset": 0,
+    "limit": 100
+  }
+}
+```
+
+Follow `coverage.next_offset` until it is null; `coverage.total` equals
+`summary.limitations_total`. The `limitations` collection applies only to
+`analyze_javascript_application` Evidence.
+
 ## Retained file and native facts
 
 Read metadata, native inventory and unavailable processing scopes directly from
